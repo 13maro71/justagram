@@ -1,0 +1,75 @@
+name: Build JustAgram iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios-ipa:
+    runs-on: macos-15
+    steps:
+      - name: Checkout JustAgram
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies & build web assets
+        run: |
+          bun install
+          bun run build
+          bun run sync
+
+      - name: Install CocoaPods (if Podfile exists)
+        run: |
+          if [ -f "ios/App/Podfile" ]; then
+            cd ios/App
+            pod install --repo-update
+          fi
+
+      - name: Build unsigned iOS .app
+        run: |
+          cd ios/App
+          if [ -d "App.xcworkspace" ]; then
+            xcodebuild \
+              -workspace App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build
+          else
+            xcodebuild \
+              -project App.xcodeproj \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build
+          fi
+
+      - name: Package JustAgram.ipa
+        run: |
+          APP_PATH=$(find ios/App/build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          echo "Found app bundle: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r JustAgram.ipa Payload
+          ls -lh JustAgram.ipa
+
+      - name: Upload JustAgram.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JustAgram-ipa
+          path: JustAgram.ipa
+          retention-days: 30
